@@ -11,12 +11,13 @@ async def keep_printing_2(num):
         print('I am Printing from 2...')
         
 async def main():
-    await asyncio.gather(keep_printing_1((10)), 
+    result = await asyncio.gather(keep_printing_1((10)), 
                          keep_printing_2(10),
                          keep_printing_1((10)), 
                          keep_printing_2(10),
                          keep_printing_1((10)), 
                          keep_printing_2(10))
+    print(result) # results will be list of coro output.
     # await asyncio.gather(keep_printing_1((10)), keep_printing_2(10))
     # await asyncio.gather(keep_printing_1((10)), keep_printing_2(10))
     # await asyncio.gather(keep_printing_1((10)), keep_printing_2(10))
