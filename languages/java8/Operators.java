@@ -21,6 +21,22 @@ public class Operators {
         System.out.println(n1%n2);
 
         // priority and precedence, + - , * / %
+
+
+        // Concatenation Operator
+        System.out.println("10"+"20"); // for efficiency use StringBuilder
+        System.out.println(10+"20");
+        int[] n3 = {10};
+        int[] n4 = {20};
+        // System.out.println(n3+n4); Not supported.
+
+        // Relational Operator, > >= < <= == !=
+
+        // Logical operators, &&, ||, !, ^
+
+        // Assignment Operator, =
+
+        // Ternary Operator ? :
     }
     
 }
