@@ -1,5 +1,4 @@
 import java.util.ArrayList;
-import java.util;
 
 public class Import{
     public static void main(String[] args) {
