@@ -3,6 +3,8 @@ from time import sleep
 import time
 from threading import Thread
 
+# Here, we can clearly see if task is Cpu bound then PVM is not executing tasks in parallel due to GIL.
+
 def keep_printing(n):
     print(th.current_thread())
     for i in range(n):
