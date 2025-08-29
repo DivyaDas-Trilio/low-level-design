@@ -9,3 +9,7 @@ class B{
 class C{
     
 }
+
+interface D{
+
+}
