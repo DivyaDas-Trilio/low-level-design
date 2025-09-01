@@ -1,0 +1,8 @@
+FROM python:3.10
+
+# Install your package from PyPI
+RUN pip install async-http-server
+
+# Run module (your package must have __main__.py or entrypoint)
+# CMD ["python", "-m", "async_server"]
+CMD ["sleep", "500m"]

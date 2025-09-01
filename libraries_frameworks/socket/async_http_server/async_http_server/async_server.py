@@ -44,8 +44,8 @@ async def handle_client(reader, writer):
 
 
 async def start_server():
-    HOST= "192.168.1.44"
-    PORT = 5555
+    HOST= "0.0.0.0"
+    PORT = 8443
     server = await asyncio.start_server(handle_client, HOST, PORT)
     addr = server.sockets[0].getsockname()
     print(f"[LISTENING] server on {addr}")
