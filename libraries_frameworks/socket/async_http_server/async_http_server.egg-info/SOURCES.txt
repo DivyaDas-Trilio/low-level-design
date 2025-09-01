@@ -1,4 +1,6 @@
 setup.py
+async_http_server/__init__.py
+async_http_server/async_server.py
 async_http_server.egg-info/PKG-INFO
 async_http_server.egg-info/SOURCES.txt
 async_http_server.egg-info/dependency_links.txt
