@@ -1,7 +1,7 @@
 import asyncio
 
 #lock = asyncio.Lock()
-lock = asyncio.Semaphore(2)
+lock = asyncio.BoundedSemaphore(2)
 
 async def print_name(name):
     await lock.acquire()
