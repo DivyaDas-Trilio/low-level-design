@@ -2,7 +2,8 @@
 
 #ThreadPoolExecutor and ProcessPool Executor extends Abstract Class.
 
-from concurrent.futures import ThreadPoolExecutor
+from asyncio import as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Thread
 import time
 
@@ -21,10 +22,18 @@ if __name__ == '__main__':
     # print('main thread ...')
     
     # map method for multiple set of args.
-    delay = [5, 5, 5]
-    futures = th.map(fn_sleep, delay)
-    print('In Main method by main thread...')
-    for f in futures:
-        print(f)
-    # print(futures)
-    print('Ending Main Thread...')
+    # delay = [5, 5, 5]
+    # futures = th.map(fn_sleep, delay)
+    # print('In Main method by main thread...')
+    # for f in futures:
+    #     print(f)
+    # # print(futures)
+    # print('Ending Main Thread...')
+    
+    futures = [th.submit(fn_sleep, delay) for delay in range(5,10)]
+    print(futures)
+    for future in as_completed(futures):
+        print(future.result())
+    print('main Thread Ends...')
+    
+    #th.shutdown()
