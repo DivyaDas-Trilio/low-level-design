@@ -18,4 +18,4 @@ class Employee(Person):
         
         
 emp = Employee("dj", 31, 123, 'cse')
-print(emp)
+print(emp.name)
