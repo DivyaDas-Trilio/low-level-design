@@ -29,6 +29,7 @@ def start_server():
     
     while True:
         conn, addr = server.accept()
+        print(f"CONN:- {conn}")
         handle_client(conn, addr)
         
 if __name__ == '__main__':
