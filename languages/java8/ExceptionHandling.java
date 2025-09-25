@@ -5,6 +5,9 @@ public class ExceptionHandling {
             System.out.println(10/0);
         }
         catch(ArithmeticException ex){
+            System.out.println(ex);
+            ex.printStackTrace();
+            System.out.println(ex.getMessage());
             System.out.println(10/2);
         }
         System.out.println("stmt-03");
