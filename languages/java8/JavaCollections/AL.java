@@ -6,6 +6,7 @@ class AL {
     public static void main(String[] args) {
         ArrayList<Object> al = new ArrayList(10);
         al.add(10);
+        al.add(0, al);
         for(int i=0; i<20;i++){
             al.add("Hello");
         }
