@@ -2,9 +2,9 @@ public class ExceptionHandling {
     public static void main(String[] args) {
         System.out.println("stme-01");
         try{
-            System.out.println(10/0);
+            System.out.println(10.0/0);
         }
-        catch(ArithmeticException ex){
+        catch(Exception ex){
             System.out.println(ex);
             ex.printStackTrace();
             System.out.println(ex.getMessage());
