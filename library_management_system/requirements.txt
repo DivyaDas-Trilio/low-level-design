@@ -1,0 +1,13 @@
+# API Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Data validation
+pydantic==2.5.0
+
+# Date/time handling
+python-dateutil==2.8.2
+
+# Development
+pytest==7.4.3
+httpx==0.25.2  # For testing FastAPI
