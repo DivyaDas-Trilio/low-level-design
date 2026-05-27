@@ -1,4 +1,11 @@
-class Email:
+from abc import ABC, abstractmethod
+class Prototype(ABC):
+    
+    @abstractmethod
+    def clone(self):
+        pass
+
+class Email(Prototype):
     def __init__(self, subject=None, body=None, sender=None, recipient=None, **kwargs):
         self._subject = subject
         self._body = body
@@ -50,7 +57,7 @@ class Email:
     def clone(self):
         return Email(copy=self)
     
-class PremiumEmail(Email):
+class PremiumEmail(Email, Prototype):
     def __init__(self, subject=None, body=None, sender=None, recipient=None, **kwargs):
         super().__init__(subject, body, sender, recipient, **kwargs)
         self._priority = kwargs.get("priority", "High")
