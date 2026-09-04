@@ -13,7 +13,7 @@ class Repository(ABC, Generic[ID, T]):
     """
 
     @abstractmethod
-    def get(self, id: ID) -> T:
+    def get(self, entity_id: ID) -> T:
         """Return the aggregate by its id; raise EntityNotFoundError if missing."""
         ...
 

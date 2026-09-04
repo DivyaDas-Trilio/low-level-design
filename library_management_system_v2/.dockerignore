@@ -1,0 +1,16 @@
+# Keep the build context (and image) small and secret-free (Step 14.1 / 16).
+.git
+.gitignore
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+*.db
+docs/
+tests/
+*.md
+.DS_Store

@@ -11,3 +11,7 @@ class LoanAlreadyReturnedError(DomainError):
 
 class BorrowingLimitExceededError(DomainError):
     """Raised when a member exceeds the active-loan limit (rule #4)."""
+
+
+class MemberNotActiveError(DomainError):
+    """Raised when a blocked/inactive member attempts to borrow (rule #4)."""

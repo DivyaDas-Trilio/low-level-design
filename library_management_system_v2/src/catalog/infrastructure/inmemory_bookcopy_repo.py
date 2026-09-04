@@ -8,14 +8,14 @@ class InMemoryBookCopyRepository(BookCopyRepository):
     def __init__(self):
         self._db: dict[CopyId, BookCopy] = {}
 
-    def get(self, copy_id: CopyId) -> BookCopy:
+    def get(self, entity_id: CopyId) -> BookCopy:
         try:
-            return self._db[copy_id]
+            return self._db[entity_id]
         except KeyError:
-            raise EntityNotFoundError(str(copy_id))
+            raise EntityNotFoundError(str(entity_id))
 
-    def save(self, copy: BookCopy) -> None:
-        self._db[copy.copy_id] = copy                  # upsert, keyed by id
+    def save(self, aggregate: BookCopy) -> None:
+        self._db[aggregate.copy_id] = aggregate                  # upsert, keyed by id
 
     def find_available_for_book(self, book_id: BookId) -> list[BookCopy]:
         return [c for c in self._db.values()

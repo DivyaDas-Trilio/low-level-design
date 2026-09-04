@@ -1,0 +1,9 @@
+# Base: everything shared across environments (namespace + deployment + a ClusterIP service).
+# Overlays reference this base and patch only what differs.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml

@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lms
+  namespace: lms
+  labels:
+    app: lms
+spec:
+  replicas: 2                       # two pods → the Service load-balances across them
+  selector:
+    matchLabels:
+      app: lms
+  template:
+    metadata:
+      labels:
+        app: lms
+    spec:
+      # Pod-level hardening: never run as root.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001            # matches the 'appuser' in the Dockerfile
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: lms
+          image: divyajyotidas15/lms:0.1.1     # one image, deployed to every environment
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+          env:                                  # 12-factor config from the environment
+            - { name: PORT,      value: "8000" }
+            - { name: WORKERS,   value: "2" }
+            - { name: LOG_LEVEL, value: "INFO" }
+          readinessProbe:                       # gates traffic; failing pod pulled from Service
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:                        # cheap, dependency-free; failing pod restarted
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }    # writable /tmp under a read-only rootfs
+      volumes:
+        - name: tmp
+          emptyDir: {}

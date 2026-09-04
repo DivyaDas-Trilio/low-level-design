@@ -15,3 +15,6 @@ class DomainError(DomainException):
 
 class EntityNotFoundError(DomainError):
     """Raised when an aggregate cannot be found by its id (generic, used by every repo)."""
+    
+class EntityAlreadyExistsError(DomainError):
+    """Raised when an aggregate is already present in DB."""
