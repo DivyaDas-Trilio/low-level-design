@@ -9,9 +9,12 @@ into a clean design, applying DDD / OOP / SOLID / patterns **only where they ear
 - [`REQUIREMENTS.md`](REQUIREMENTS.md) — stakeholders, user stories, business rules, NFRs, and the
   roadmap/status table. **Check the roadmap table here before starting a step** — it tracks
   where we are.
-- [`docs/`](docs/) — the 28-step written walkthrough. Steps 1–12 = design (DDD), 13–28 = path to
-  production (containers → CI/CD → k8s → observability → security). The prose is **complete**;
-  the *code* is what we're building now. Read the relevant `docs/step-NN-*.md` before coding a step.
+- [`docs/`](docs/) — the written walkthrough, in two parts. **Part I (design, DDD):**
+  `step-01`…`step-12`. **Part II (from code to production):** `part2-00`…`part2-08`, reorganized
+  around the pipeline `CODE → BUILD → TEST → PACKAGE → DEPLOY → OBSERVE` — each stage doc covers
+  the real ways to do it on a private Kubernetes cluster vs on AWS, and what to opt for. (Part II
+  replaced the older 16-file `step-13`…`step-28` set, recoverable from git history.) Read the
+  relevant doc before coding a step.
 
 ## Tech stack & commands
 

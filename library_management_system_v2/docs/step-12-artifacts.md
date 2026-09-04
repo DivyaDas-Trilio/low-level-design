@@ -12,40 +12,50 @@ Your `lld_basics.excalidraw` ends the DDD process with a checklist of deliverabl
 
 ## 12.1 Final directory structure
 
+> **Note — this is the *as-built* layout, and it's organized subdomain-first (vertical slices), not layer-first.** An earlier draft of this series drew a single flat `src/domain | application | infrastructure | api`. We deliberately changed course (Step 8a): each **subdomain** is a self-contained slice with its *own* four layers, so a future microservice split is a **lift-out of a folder**, not a re-architecture. The layer rules still hold *inside* each slice; the tree just groups by *subdomain first, layer second*.
+
 ```
 library_management_system_v2/
-├── REQUIREMENTS.md
-├── docs/                                  ← this 12-part series
+├── REQUIREMENTS.md · CLAUDE.md · pyproject.toml · Makefile
+├── docs/                                    ← this 12-part series
+├── tests/                                   ← pytest (mirrors src/ by slice)
 └── src/
-    ├── domain/                            ← PURE business logic (no framework imports)
-    │   ├── ids.py                         BookId, CopyId, MemberId, LoanId, FineId
-    │   ├── enums.py                       CopyStatus, LoanStatus, FineStatus
-    │   ├── value_objects.py               Money, ISBN, DateRange
-    │   ├── exceptions.py                  DomainError hierarchy
-    │   ├── entities/
-    │   │   ├── book.py · book_copy.py · member.py · fine.py
-    │   │   ├── loan.py                     (aggregate root)
-    │   │   └── loan_state.py               State pattern: ActiveState, ReturnedState
-    │   ├── services/
-    │   │   ├── borrowing.py                BorrowingService (domain service)
-    │   │   └── fine_calculation.py         FineCalculationStrategy (+ Standard/Grace/Capped)
-    │   └── repositories/                   ← INTERFACES (ports)
-    │       ├── base.py                     Repository[ID, T]
-    │       └── {book,book_copy,member,loan,fine}_repository.py
-    ├── application/                        ← use-case orchestration
-    │   ├── services.py                     LibraryService
-    │   ├── dtos.py                          LoanView, ReturnView
-    │   └── ports.py                         Clock, Notifier
-    ├── infrastructure/                     ← ADAPTERS (implementations)
-    │   ├── memory/                          InMemory*Repository
-    │   └── sql/                             Sql*Repository (when a real DB is added)
-    ├── api/                                ← thin HTTP layer
-    │   ├── main.py · dtos.py · errors.py · dependencies.py
-    │   └── controllers/                     book · loan · member
-    └── composition.py                      ← composition root (wires it all)
+    ├── shared/                              ← SHARED KERNEL (tiny, stable, dependency-free)
+    │   ├── ids.py                           EntityId + Book/Copy/Member/Loan/FineId
+    │   ├── base_repo.py                     Repository[ID, T]  (generic port)
+    │   └── exceptions.py                    DomainError · EntityNotFound · EntityAlreadyExists
+    │
+    ├── catalog/                             ← SUPPORTING subdomain (one full vertical slice)
+    │   ├── domain/         book.py · bookcopy.py · isbn.py · enums.py · exceptions.py
+    │   │                   repository/{book_repo, book_copy_repo}.py    ← ports
+    │   ├── application/    catalog_service.py
+    │   ├── infrastructure/ inmemory_book_repo.py · inmemory_bookcopy_repo.py · sql_book_repo.py
+    │   └── api/            controller.py · dtos.py · dependencies.py    (thin)
+    │
+    ├── membership/                          ← SUPPORTING
+    │   ├── domain/         member.py · email.py · enums.py · exceptions.py · repository.py
+    │   ├── application/    membership_service.py
+    │   └── infrastructure/ inmemory_membership_repository.py
+    │
+    ├── lending/                             ← CORE (the lavish-modeling subdomain)
+    │   ├── domain/         loan.py (aggregate root) · daterange.py · enums.py · exceptions.py
+    │   │                   borrowing_service.py (domain service) · repository.py
+    │   ├── application/    lending_service.py   (composes catalog + membership + fines by ID/port)
+    │   └── infrastructure/ inmemory_loan_repository.py
+    │
+    ├── fines/                               ← SUPPORTING
+    │   ├── domain/         fine.py · money.py · enums.py · exceptions.py
+    │   │                   fine_calculation.py (Strategy) · repository.py
+    │   ├── application/    fine_service.py
+    │   └── infrastructure/ inmemory_fine_repository.py
+    │
+    ├── notifications/                       ← GENERIC (scaffolded; a Notifier port when needed)
+    │
+    ├── app.py                               ← FastAPI app + central error handlers
+    └── main.py                              ← composition root + demo harness (no web, no DB)
 ```
 
-The layout *is* the architecture: four layers, dependencies pointing inward, `domain/` importing nothing.
+The layout *is* the architecture — but the primary axis is the **subdomain**, not the layer. Inside each slice, dependencies still point inward (`domain/` imports nothing but `shared/`); **across** slices, no slice imports another's internals — cross-slice references are **by ID**, composed only at the **application** layer (e.g. `lending` calls `catalog`/`membership`/`fines` through their public interfaces). That is exactly what makes each slice a lift-out.
 
 ---
 
@@ -93,17 +103,20 @@ classDiagram
     }
     class Member {
         +MemberId id
-        -bool _active
+        +str name
+        -EmailAddress _email
+        -MemberStatus _status
         +is_active bool
         +block()
         +unblock()
+        +update_profile()
     }
     class Loan {
         +LoanId id
         +MemberId member_id
         +CopyId copy_id
         +DateRange period
-        -LoanState _state
+        -LoanStatus _status
         +create()$ Loan
         +return_copy(on_date) int
         +is_overdue(as_of) bool
@@ -118,27 +131,29 @@ classDiagram
         +pay()
         +waive()
     }
-    class Money { +int amount\n+str currency\n+add()\n+multiply() }
+    class Money { +int amount\n+str currency\n+rupees()$ Money\n+add()\n+multiply() }
     class ISBN { +str value }
+    class EmailAddress { +str value }
     class DateRange { +date start\n+date end\n+days_overdue(as_of) }
-    class LoanState { <<abstract>>\n+return_copy(loan, on_date) }
-    class BorrowingService { +check_can_borrow(member, copy, count) }
+    class BorrowingService { +check_can_borrow(member_active, active_loan_count) }
     class FineCalculationStrategy { <<abstract>>\n+calculate(days) Money }
 
     Book *-- ISBN : composition
+    Member *-- EmailAddress : composition
     BookCopy ..> Book : book_id (by ID)
     Loan ..> Member : member_id (by ID)
     Loan ..> BookCopy : copy_id (by ID)
     Loan *-- DateRange : composition
-    Loan *-- LoanState : State pattern
     Fine ..> Member : member_id (by ID)
     Fine ..> Loan : loan_id (by ID)
     Fine *-- Money : composition
-    BorrowingService ..> Member : reads
-    BorrowingService ..> BookCopy : reads
 ```
 
 `*--` (composition) = inside an aggregate (Step 6); `..>` (dependency/by-ID) = across aggregates. Five single-entity aggregates, every cross-reference an ID.
+
+> **Two deliberate divergences from an earlier draft — both worth being able to defend:**
+> - **`BorrowingService` has *no* arrows to `Member`/`BookCopy`.** It takes plain **values** (`member_active: bool`, `active_loan_count: int`), not foreign entities (§9.3.2, "Option 1"). That's what keeps the `lending` slice from importing `membership`/`catalog` — the application service gathers the values and hands them down.
+> - **`Loan` carries a `LoanStatus` enum-guard, not a `LoanState` object.** We did **not** use the State pattern (for `Loan` *or* `BookCopy`) — there's no divergent per-state behavior to justify it (§8b). State earns its place only when each state needs *different code*; an enum + a guarded transition is the KISS choice here.
 
 ## 12.4 Pattern & layer diagram
 
@@ -147,22 +162,29 @@ classDiagram
     class FineCalculationStrategy { <<interface>> }
     class StandardFineStrategy
     class GracePeriodFineStrategy
-    class CappedFineStrategy
     FineCalculationStrategy <|.. StandardFineStrategy : Strategy
     FineCalculationStrategy <|.. GracePeriodFineStrategy
-    FineCalculationStrategy <|.. CappedFineStrategy
+
+    class BookRepository { <<interface>> }
+    class InMemoryBookRepository
+    class SqlBookRepository
+    BookRepository <|.. InMemoryBookRepository : Repository
+    BookRepository <|.. SqlBookRepository : (Data Mapper adapter)
 
     class LoanRepository { <<interface>> }
     class InMemoryLoanRepository
-    class SqlLoanRepository
-    LoanRepository <|.. InMemoryLoanRepository : Repository
-    LoanRepository <|.. SqlLoanRepository
+    LoanRepository <|.. InMemoryLoanRepository
 
-    class LibraryService
-    LibraryService ..> LoanRepository : depends on interface (DIP)
-    LibraryService ..> FineCalculationStrategy : depends on interface (DIP)
-    LibraryService ..> BorrowingService
+    class LendingService
+    class FineService
+    LendingService ..> LoanRepository : DIP (own aggregate)
+    LendingService ..> BorrowingService : domain rules
+    LendingService ..> FineService : cross-subdomain (app layer)
+    FineService ..> FineRepository : DIP
+    FineService ..> FineCalculationStrategy : DIP (swappable policy)
 ```
+
+There is **no single `LibraryService`** — each subdomain owns its own thin application service (`CatalogService`, `MembershipService`, `LendingService`, `FineService`). `LendingService` is the one that *composes* others, and it does so only through their **public interfaces** (a repository port for reads, `FineService` for the fine command) — never by importing their domain internals.
 
 ---
 
@@ -205,20 +227,20 @@ Every by-ID reference became a foreign key; every aggregate root became a table 
 
 ```mermaid
 flowchart TD
-    A[POST /loans/borrow] --> B[Load Member, Copy; count active loans]
+    A[LendingService.borrow_book member_id, copy_id] --> B[Load Member + Copy; count active loans]
     B --> C{Member active?}
-    C -- no --> E1[409 MemberBlocked]
-    C -- yes --> D{Copy available?}
-    D -- no --> E2[409 CopyNotAvailable]
-    D -- yes --> F{Active loans < 2?}
-    F -- no --> E3[409 BorrowingLimitExceeded]
-    F -- yes --> G[copy.issue → LOANED]
+    C -- no --> E1[MemberNotActiveError]
+    C -- yes --> F{Active loans < 2?}
+    F -- no --> E3[BorrowingLimitExceeded]
+    F -- yes --> D{Copy available?}
+    D -- no --> E2[CopyNotAvailable]
+    D -- yes --> G[copy.issue → LOANED]
     G --> H[Loan.create due = today + 5]
     H --> I[save copy + loan]
-    I --> J[201 LoanResponse]
+    I --> J[return LoanId]
 ```
 
-The three diamonds are the `BorrowingService` rules; everything below them is orchestration. Decisions = domain, steps = application.
+The first two diamonds are `BorrowingService.check_can_borrow` — evaluated in that order (**member active first, then the ≤2 limit**), on plain **values**; the third is `BookCopy.issue()`'s *own* guard, raised only when we actually try to issue. Decisions = domain, steps = application; the flow is entirely framework-free (driven here by `main.py`). At an HTTP edge these three errors map to **409**s via the single central handler (§11) — but that mapping lives in `app.py`, not in this flow.
 
 ---
 
@@ -237,8 +259,11 @@ The heart of the series in one table — *why* each decision was made, not just 
 | Five small aggregates, reference by ID | Small aggregates, low coupling, low contention | 5 |
 | `Member` does **not** count its own loans | Aggregate boundary as a responsibility limit | 5, 7 |
 | Unidirectional by-ID references | Single source of truth, small aggregates | 6 |
+| **Subdomain-first vertical slices** + shared kernel | Modularity + split-readiness (a slice is a lift-out) | 8a |
 | Rich entities with guarded commands | Tell-Don't-Ask, Information Expert, anti-anemic | 7, 8 |
-| `BookCopy` = transition table, not State pattern | KISS — no divergent per-state behavior | 8b |
+| `Loan` **and** `BookCopy` = enum-guard, **not** State pattern | KISS — no divergent per-state behavior to justify State | 8b |
+| Domain service takes **values**, not foreign entities | No cross-subdomain coupling (Option 1) → slice stays a lift-out | 9 |
+| Cross-subdomain writes via **public app services** (lending→fines) | Composition lives at the application layer only | 9 |
 | Fine calculation as a Strategy | OCP / LSP / DIP — swappable policy | 8b |
 | `Loan.create()` factory | Guarantee creation invariants | 8b |
 | Domain service vs application service split | SRP — rules vs orchestration | 9 |
@@ -251,10 +276,12 @@ The heart of the series in one table — *why* each decision was made, not just 
 ## 12.8 Where each pattern & principle lives
 
 - **OOP:** Encapsulation (every VO/entity), Composition over inheritance (entities ◆ VOs), Abstraction (Book/BookCopy), Tell-Don't-Ask (entity commands).
-- **SOLID:** SRP (layers, services), OCP (fine Strategy, error handler), LSP (strategies/repos substitutable), ISP (per-aggregate repo interfaces), DIP (repos, ports, composition root).
-- **GoF patterns:** **Strategy** (fine calc), **State** (loan lifecycle), **Factory Method** (`Loan.create`), **Repository** (persistence), plus the **Decorator** idea in `CappedFineStrategy` and where **Observer** would slot in (domain events for notifications).
-- **GRASP:** Information Expert (responsibility placement).
-- **Restraint principles:** KISS / YAGNI / DRY throughout — the reason we *didn't* use microservices, *didn't* force the State pattern on `BookCopy`, and *didn't* build a domain-event bus we don't yet need.
+- **SOLID:** SRP (layers, services), OCP (fine Strategy, central error handler), LSP (strategies/repos substitutable), ISP (per-aggregate repo interfaces), DIP (repos, ports, composition root).
+- **Architecture:** **Modular monolith / vertical slices** (subdomain-first), **Ports & Adapters** (repository ports in `domain/`, adapters in `infrastructure/`; inbound adapters at `api/`), **Shared Kernel** (`src/shared/`), cross-slice references **by ID** — all chosen for split-readiness at one-context scale.
+- **GoF patterns actually built:** **Strategy** (fine calc — `Standard` + `GracePeriod`), **Factory Method** (`Loan.create`, `Money.rupees`), **Repository** + **Data Mapper** (`SqlBookRepository` maps `Book` ⇄ ORM row, keeping the domain pure).
+- **Patterns deliberately *not* built (and why we can point to where they'd go):** **State** — an enum-guard covered `Loan`/`BookCopy` with no divergent per-state behavior; **Observer / domain events** — a direct `Notifier` call suffices until reactions multiply.
+- **GRASP:** Information Expert (responsibility placement), Low Coupling / High Cohesion (the slice boundaries).
+- **Restraint principles:** KISS / YAGNI / DRY throughout — the reason we *didn't* split into microservices, *didn't* force the State pattern on `Loan`/`BookCopy`, and *didn't* build a domain-event bus we don't yet need.
 
 ---
 
@@ -264,7 +291,7 @@ Honest scope boundaries — each one a *conscious* deferral, not an oversight:
 
 | Deferred | Why it was right to defer | When to add it |
 |---|---|---|
-| Real database (SQL) | Persistence is a detail; in-memory ran the whole model | Step 11's adapter swap — interfaces ready |
+| Real database (SQL) across all slices | Persistence is a detail; in-memory ran the whole model. A SQL adapter (`catalog/infrastructure/sql_book_repo.py`) already **demonstrates** the Data-Mapper swap for one aggregate | The other aggregates follow the identical pattern — domain/application unchanged |
 | Authentication/roles | Generic subdomain, not core | Plug in at the API edge |
 | Domain events + Observer | KISS — one notifier call suffices now | When reactions multiply (notify + log + stats) |
 | CQRS / read models | No read/write scaling pressure at 100 members | If queries dwarf writes |
