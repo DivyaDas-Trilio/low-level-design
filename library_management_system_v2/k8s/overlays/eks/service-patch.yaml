@@ -1,0 +1,9 @@
+# EKS (AWS): the cloud provisions a real ELB for a LoadBalancer Service.
+# Public DNS name appears as the Service's EXTERNAL-IP.
+apiVersion: v1
+kind: Service
+metadata:
+  name: lms
+  namespace: lms
+spec:
+  type: LoadBalancer

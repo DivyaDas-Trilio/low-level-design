@@ -1,0 +1,10 @@
+# EKS overlay: base + a LoadBalancer Service.
+# Deploy with:  kubectl apply -k k8s/overlays/eks
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  - path: service-patch.yaml      # target inferred from the patch's kind/name/namespace
