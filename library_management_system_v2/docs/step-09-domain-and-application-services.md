@@ -364,6 +364,164 @@ There are **two kinds of "connect":** a *passive reference* (domain level) and *
 
 ---
 
+## 9.3.4 Getting info from another *service* (after a microservice split)
+
+In the monolith, one subdomain gets data from another via a **port** (in-process call, §9.3.1–9.3.3). On a split, that becomes a network concern — and it's just the **adapter behind the port** changing; the domain/application code stays identical. Two strategies:
+
+### Strategy 1 — Synchronous: query the other service's API
+Call it and wait: **REST/HTTP**, **gRPC** (typed, faster), or **GraphQL**.
+```python
+# the MembershipGateway adapter, now over the network
+class HttpMembershipAdapter(MembershipGateway):
+    def is_active(self, member_id):
+        return self._http.get(f"http://membership/members/{member_id}").json()["is_active"]
+```
+- ✅ Fresh data, simple. ⚠️ **Coupling** (B down → A blocked), **latency**, needs **resilience** (timeouts, retries/backoff, **circuit breaker**).
+- Use when you need the *current* value on the critical path.
+
+### Strategy 2 — Asynchronous: replicate via events (event-carried state transfer)
+The other service **publishes events** on change; you **subscribe and keep a local copy** of just what you need, then read from your own store — no runtime call.
+```
+membership publishes:  MemberBlocked(id), MemberRegistered(id, …)
+lending subscribes  →  maintains a local `member_status` read-model
+borrow reads:          its OWN read-model (no call to membership)
+```
+- ✅ Decoupled (B can be down), fast local reads, scales. ⚠️ **Eventually consistent** + you store a copy. (This is a CQRS **read model / projection**.)
+- Use when you want decoupling/resilience/high read volume and can tolerate slight staleness.
+
+### Middle grounds & the anti-pattern
+- **Cache** the sync response with a TTL (fewer calls, bounded staleness).
+- **API composition / BFF** — a gateway calls several services and stitches a client view.
+- ❌ **Shared database** — never read another service's tables directly; that recouples them into a distributed monolith. Go through its **API or events**.
+
+### How to choose
+| Need | Use |
+|---|---|
+| Current value, on the critical path | **Synchronous** (REST/gRPC) + resilience |
+| Decoupling / resilience / high read volume; staleness OK | **Async replication** (events → local read-model) |
+| Reduce sync calls, bounded staleness | **Cache** |
+| Stitch data for a client screen | **API composition / BFF** |
+
+### The tie-back to the port
+Because your subdomain depends on a **port** (`MembershipGateway`), the split only swaps the **adapter**: in-process call → **HTTP/gRPC client** (Strategy 1) *or* **read from a local replica fed by events** (Strategy 2). **Domain + application code never change** — that's the payoff of depending on the abstraction.
+
+> **In one line:** a service gets info from another either **synchronously** (REST/gRPC/GraphQL — fresh, but coupled + needs timeouts/retries/circuit-breakers) or **asynchronously** (subscribe to its events, keep a **local read-model**, read locally — decoupled + resilient, but eventually consistent). Never read its **database**. In this design it's the **adapter behind the port** that changes; the domain/application stays identical.
+
+---
+
+## 9.3.5 *Changing* another service's data on a split — commands + sagas
+
+§9.3.4 covered *reading* another service's data. **Writing** to it is the harder case — and it's where a monolith use case visibly changes shape.
+
+### The problem
+In the monolith, `borrow_book` does `copy = copies.get(id); copy.issue(); copies.save(copy)` — it **mutates the catalog aggregate in-process and persists it**. On a split that **breaks**, because:
+1. lending **doesn't own catalog's database** → `copies.save(copy)` can't write it;
+2. lending **can't call catalog's domain method** → `copy` arrived as a **DTO**, not a live `BookCopy` with `.issue()`; mutating a local copy persists nothing;
+3. you'd be **mutating another service's aggregate from outside it** — which no service may do.
+
+### The fix: the mutation moves *into* the owning service
+Lending stops mutating the copy and **asks catalog to** — catalog loads its own `BookCopy`, calls `issue()`, commits to *its* DB:
+```python
+self._catalog.issue_copy(copy_id)     # a COMMAND to catalog (REST/gRPC/event) — not copy.issue() locally
+```
+
+### Two writes, two services, no shared transaction → a **saga**
+Borrow now changes `BookCopy` (catalog) **and** `Loan` (lending) in **separate databases** — no single ACID transaction. So you need a **saga with compensation**:
+```
+borrow (orchestration saga, driven by lending):
+  1. check eligibility        (membership query + own loan count)
+  2. catalog.issue_copy(id)   → catalog issues + commits (its OWN tx)
+        └─ unavailable         → stop, no loan
+  3. loans.save(new loan)     → lending commits (its OWN tx)
+        └─ if THIS fails        → COMPENSATE: catalog.return_copy(id)   # undo step 2
+  return loan_id
+```
+The **compensation** (undo the copy-issue if the loan save fails) replaces the local transaction's automatic rollback — the two commits are in different DBs, so you can't roll them back together; you explicitly **undo**.
+
+### Sync vs async, + idempotency
+- **Orchestration (sync):** lending calls catalog's API, waits, compensates on failure (above).
+- **Choreography (events):** lending emits `LoanRequested` → catalog issues, emits `CopyIssued`/`CopyIssueFailed` → lending finalizes or cancels. Looser, eventually consistent.
+- Either way, make the commands **idempotent** (a retry mustn't double-issue).
+
+### The takeaway
+The design stays a lift-out (subdomains, by-ID, ports) — but the **borrow *orchestration* upgrades**:
+- **Monolith:** load → mutate both aggregates → save, in **one local transaction**.
+- **Microservices:** **reads** become **queries** to other services (§9.3.4); **writes** become **commands to the owning service** coordinated by a **saga with compensation** (accepting eventual consistency).
+
+> **In one line:** you can't mutate or persist **another service's aggregate** from outside it — so on a split, `copy.issue()`/`copies.save()` in lending move *into* catalog as a **command** (`catalog.issue_copy()`), and because borrow spans **two services' writes with no shared transaction**, it becomes a **saga with compensation** (issue copy → create loan → if the loan fails, un-issue the copy). Reads → queries; cross-service writes → commands + saga.
+
+---
+
+## 9.3.6 The *receiving* end: inbound adapters (REST controller vs RMQ consumer)
+
+§9.3.4–§9.3.5 covered how service A *reaches* service B (a query, or a command). This section flips to B's side: **how does service B receive that stimulus, and which layer owns it?**
+
+Say `ServiceA` is REST-fronted and calls `ServiceB`, but `ServiceB` receives the call as a **RabbitMQ message** (async command), not an HTTP request. Question: does B's *controller* layer handle the messages and the connection?
+
+### The reframe: a "controller" is just one kind of **inbound (driving) adapter**
+
+A REST controller is **not special**. It's a *driving adapter* — the thing that takes a stimulus from the outside and drives the application service, holding **zero business logic**. An event-driven service's driving adapter is a **message consumer / listener** instead of an HTTP controller. They are **siblings over the same core**:
+
+```
+ServiceA (REST) --HTTP--> [ REST controller ] --\
+                                                  >--> Application Service --> Domain
+ServiceA        --RMQ---> [ RMQ consumer    ] --/          (identical core)
+```
+
+The application service and domain **don't know or care** which adapter woke them — `LendingService.borrow_book(...)` is called the same way either way. Swap RMQ for Kafka and only the adapter changes. This is **ports & adapters (hexagonal)** applied to the *inbound* side.
+
+### But "handle messages **and** connection" is two different concerns — split them
+
+| Concern | Belongs to | Why |
+|---|---|---|
+| **Connection, channel, subscribe, prefetch, ack/nack, reconnect** | **Infrastructure** (a messaging/transport layer) | Transport plumbing — the RMQ equivalent of the HTTP server socket. A REST controller doesn't manage TCP sockets; a message handler shouldn't manage channels/acks. |
+| **Deserialize payload → DTO, call the app service, decide the outcome** | **The consumer/handler adapter** (the "controller") | This is *translation* — exactly the controller's job, one layer up. |
+
+So the RMQ consumer adapter's job **mirrors the four controller jobs** — with one twist in the last row:
+
+| REST controller | RMQ consumer adapter |
+|---|---|
+| Parse JSON body → DTO | Deserialize message payload → DTO |
+| Call the application service | Call the application service |
+| Map result → HTTP status | Usually nothing to return (fire-and-forget) |
+| Let exceptions → central handler → `4xx/5xx` | Translate outcome → **ack / nack-requeue / reject-to-DLQ** |
+
+HTTP replies to the *caller* with a **status code**; a consumer replies to the *broker* with **ack** (success), **nack/requeue** (transient failure → retry), or **reject → dead-letter queue** (poison message). That's the messaging analog of status-code mapping.
+
+```python
+# infrastructure: owns the connection, channel, ack — the plumbing
+class RabbitConsumer:
+    def start(self):
+        self._channel.basic_consume(queue="borrow.commands", on_message=self._dispatch)
+    def _dispatch(self, ch, method, body):
+        try:
+            self._handler.handle(body)                            # -> the adapter below
+            ch.basic_ack(method.delivery_tag)                    # transport concern
+        except TransientError:
+            ch.basic_nack(method.delivery_tag, requeue=True)     # retry later
+        except PoisonMessageError:
+            ch.basic_reject(method.delivery_tag, requeue=False)  # -> dead-letter queue
+
+# adapter ("controller"): translation only, no connection knowledge
+class BorrowMessageHandler:
+    def handle(self, body: bytes) -> None:
+        cmd = BorrowCommand.model_validate_json(body)            # shape validation
+        self._lending.borrow_book(cmd.member_id, cmd.copy_id)    # call the app service
+```
+
+`BorrowMessageHandler` has **no idea RabbitMQ exists** — no channel, no ack. It could be driven by Kafka or an SQS poller unchanged. `RabbitConsumer` owns every broker-specific detail. That split keeps the service **testable and broker-agnostic**.
+
+### Command vs event — same plumbing, different coupling
+"A calls B" is usually a **command** (`BorrowBookCommand` — A *tells* B to act; one consumer expected). If instead B *announces a fact* (`BookReturned` — an **event**; zero or more services react), A doesn't even know who listens → looser coupling. Name the message for what it is.
+
+### Two hazards async delivery forces on B (that HTTP hides)
+- **Idempotency** — RMQ is **at-least-once**: a missed ack causes **redelivery**, so B *will* occasionally see the same message twice. The handler (or the app service) must be **idempotent** — dedupe by message ID, or make the operation naturally repeatable. Infinite requeue of a failing message is the trap.
+- **Poison messages → DLQ** — a message that *always* fails must be rejected to a **dead-letter queue** after N attempts, not requeued forever.
+
+> **In one line:** a REST controller and an RMQ consumer are both **inbound adapters** over the same application core; the consumer *handler* does the controller's translation job (deserialize → call service → decide outcome), while the **connection/channel/ack plumbing lives in infrastructure** beneath it — and async delivery adds **idempotency** and **dead-lettering** as the messaging analogs of status-code mapping.
+
+---
+
 ## 9.4 Two supporting ports: `Clock` and `Notifier`
 
 Notice `self._clock.today()` instead of `date.today()`. Calling the real clock directly inside logic makes it **untestable** (you can't test "what happens 6 days later"). So time becomes an injected **port** — a tiny abstraction (DIP again):

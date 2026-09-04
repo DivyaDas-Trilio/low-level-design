@@ -31,28 +31,26 @@ We follow a tactical-DDD sequence (adapted from my own LLD notes), with a few re
 
 Design patterns (Strategy, State, Factory, Observer, …) appear **inside the steps where a real design problem demands them** — never for their own sake. SOLID is a constant background check.
 
-### Part II — Path to Production (delivery)
+### Part II — From Code to Production (delivery)
 
-Same app, taken from laptop to live. *Survey every standard approach, then go deep on the modern container → CI/CD → Kubernetes → observe path.* Each step asks: **which production promise does this keep?**
+Same app, taken from laptop to live — reorganized around the **pipeline every change travels**:
+`CODE → BUILD → TEST → PACKAGE → DEPLOY → OBSERVE`. Each doc asks: *what are the real ways to do
+this stage, how does it differ on a private Kubernetes cluster vs on AWS, and — given a scenario —
+what do you opt for?*
 
-| Step | Chapter | Theme |
+| Doc | Stage | Theme |
 |---|---|---|
-| 13 | [The mental model](step-13-path-to-production-mental-model.md) | Promises + the universal pipeline |
-| 14 | [Production-readiness (12-Factor)](step-14-production-readiness-12-factor.md) | Make the *app* deployable |
-| 15 | [Survey: the standard ways to run it](step-15-survey-deployment-models.md) | VM → PaaS → Docker → K8s → serverless |
-| 16 | [Containerizing the LMS](step-16-containerizing-the-lms.md) | The Dockerfile |
-| 17 | [Registry & immutable tagging](step-17-registry-and-immutable-tagging.md) | The artifact store |
-| 18 | [Database & migrations](step-18-database-and-migrations.md) | The stateful part |
-| 19 | [Continuous Integration (CI)](step-19-continuous-integration.md) | The quality gate |
-| 20 | [Continuous Delivery & GitOps](step-20-continuous-delivery-and-gitops.md) | Getting the artifact running |
-| 21 | [Kubernetes core + health probes](step-21-kubernetes-core-and-probes.md) | Orchestration deep-dive |
-| 22 | [Environments & promotion](step-22-environments-and-promotion.md) | dev → staging → prod |
-| 23 | [Release strategies](step-23-release-strategies.md) | Rolling / blue-green / canary / flags |
-| 24 | [Networking, TLS, scaling & DB reality](step-24-networking-tls-scaling-and-the-db.md) | Traffic + the bottleneck |
-| 25 | [Observability](step-25-observability.md) | Logs, metrics, traces, SLOs |
-| 26 | [Security across the pipeline](step-26-security-devsecops.md) | DevSecOps |
-| 27 | [Day 2: reliability & operations](step-27-day-2-reliability-and-operations.md) | Backups, runbooks, incidents |
-| 28 | [Finale: life of one code change](step-28-finale-life-of-a-change.md) | End-to-end + teaching notes |
+| [Overview](part2-00-overview.md) | — | Promises · the 6-stage pipeline · deploy≠release · the K8s-vs-AWS lens |
+| [CODE](part2-01-code.md) | CODE | Version control, trunk-based vs GitFlow, monorepo, feature flags |
+| [BUILD](part2-02-build.md) | BUILD | 12-factor app-readiness + CI + multi-stage image build |
+| [TEST](part2-03-test.md) | TEST | The test pyramid + the scans that gate a merge |
+| [PACKAGE](part2-04-package.md) | PACKAGE | Registry, immutable SHA tags, signing & scanning |
+| [DEPLOY](part2-05-deploy.md) | DEPLOY | Push vs GitOps · runtimes (K8s/ECS/Lambda) · environments · the database |
+| [Release strategies](part2-06-release-strategies.md) | DEPLOY (release) | Rolling / blue-green / canary / feature flags |
+| [OBSERVE](part2-07-observe.md) | OBSERVE | Logs, metrics, traces, SLOs, and the auto-rollback feedback loop |
+| [Scenarios & decisions](part2-08-scenarios-and-decisions.md) | all | Scenario cheat-sheet + security/day-2 + interview Q&A |
+
+Two interactive companions accompany Part II: **The Delivery Line** (the flow) and **Ways to Production** (the decision-map).
 
 **Appendix:** [Delivering an on-prem product to multiple private-cloud distros](appendix-on-prem-multi-distro-delivery.md) — when *customers* install your product into heterogeneous OpenStack clouds (Canonical / Red Hat / Kolla) you don't control. A compact companion to Part II.
 
@@ -92,4 +90,4 @@ Python 3, FastAPI + Pydantic for the API layer, pytest for tests. The domain lay
 
 ---
 
-*Series status: ✅ COMPLETE — Part I (design, Steps 1–12) + Part II (path to production, Steps 13–28) + on-prem appendix. The LMS was designed with DDD and taken end-to-end to production.*
+*Series status: ✅ COMPLETE — Part I (design, Steps 1–12) + Part II (from code to production, `part2-00`…`part2-08`) + on-prem appendix. The LMS was designed with DDD and taken end-to-end to production.*
